@@ -1,0 +1,875 @@
+---
+title: "IT Rossmon"
+author: "César Rojas"
+date: "`r Sys.Date()`"
+output:
+   rmdformats::readthedown
+   
+---
+
+<style>
+#sidebar {
+  background: #5A7B9C;
+}
+
+#postamble {
+  background:#003366;
+  border-top:solid 10px #5A7B9C;
+}
+
+.title {
+  text-align: center;
+  color: #003366;
+}
+
+.subtitle {
+  color: #f79e02;
+}
+
+h1, h2, h3, h4, h5, h6, legend {
+  color: #ad0258;
+}
+
+#content h2 {
+    background-color: #003366;
+}
+
+
+</style>
+
+
+
+
+
+
+```{r,include=FALSE}
+
+# Se cargan las distantas librerias necesarias para la ejecución necesaria de todas las funciones que se van a utilizar en este proyecto.
+
+
+
+library(readr)
+library(forecast)
+library(dygraphs)
+library(xts)
+library(nortest)
+library(rmarkdown)
+library(fpp2)
+library(traineR)
+library(caret)
+library(lattice)
+library(dummy)
+library(corrplot)
+library(tidyverse)
+library(rattle)
+library(gbm)
+library(ggplot2)
+library(e1071)
+library(neuralnet)
+library (plotly)
+library(magrittr)
+library("FactoMineR") 
+library("factoextra")
+library(pls)
+library("corrplot")
+library(janitor)
+library(gdata)
+library(cluster)
+library(fmsb)
+library(umap)
+library(Rtsne)
+library(DT)
+library(kableExtra)
+library(echarts4r)
+library(readxl)
+library(lubridate)
+library(zoo)
+library(rfm)
+#library("discoveR")
+
+
+options(kableExtra.html.bsTable = TRUE)
+options(scipen=999)
+```
+
+
+# Carga de datos 
+
+
+```{r}
+
+
+# En este caso se hace una única carga de los archivos en formato csv que se obtienen de la pagina de SICOP, dado el tamaño de los archivos, lo recomendable es extraer año a año.
+
+
+#SICOP2010 <-  read.csv("SICOP2010.csv", sep = ";", header = T,encoding="UTF-8")
+#SICOP2011 <-  read.csv("SICOP2011.csv", sep = ";", header = T,encoding="UTF-8")
+#SICOP2012 <-  read.csv("SICOP2012.csv", sep = ";", header = T,encoding="UTF-8")
+#SICOP2013 <-  read.csv("SICOP2013.csv", sep = ";", header = T,encoding="UTF-8")
+#SICOP2014 <-  read.csv("SICOP2014.csv", sep = ";", header = T,encoding="UTF-8")
+#SICOP2015 <-  read.csv("SICOP2015.csv", sep = ";", header = T,encoding="UTF-8")
+#SICOP2016 <-  read.csv("SICOP2016.csv", sep = ";", header = T,encoding="UTF-8")
+#SICOP2017 <-  read.csv("SICOP2017.csv", sep = ";", header = T,encoding="UTF-8")
+#SICOP2018 <-  read.csv("SICOP2018.csv", sep = ";", header = T,encoding="UTF-8")
+#SICOP2019 <-  read.csv("SICOP2019.csv", sep = ";", header = T,encoding="UTF-8")
+#SICOP2020 <-  read.csv("SICOP2020.csv", sep = ";", header = T,encoding="UTF-8")
+#SICOP2021 <-  read.csv("SICOP2021.csv", sep = ";", header = T,encoding="UTF-8")
+#SICOP2022 <-  read.csv("SICOP2022.csv", sep = ";", header = T,encoding="UTF-8")
+#SICOP2022 <-  read.csv("SICOP2022Act.csv", sep = ";", header = T,encoding="UTF-8")
+
+
+
+```
+
+
+
+
+```{r}
+# Dato que tenemos licitaciones en dolares, necesitamos el tipo de cambio actualizado a la fecha, en este caso podemos descarga de la página del banco central el excel, es importante aclarar que en estos casos recomiendo dar el encoding porque eventualmente se pueden tener problemas principalmente con las fechas.
+
+
+
+Tipo_de_Cambio  <-read_excel("Tipo_de_Cambio.xlsx")
+
+
+```
+
+
+
+```{r}
+
+# Unimos todas las bases en una única base con todos los años.
+
+
+#SICOP <- rbind(SICOP2010,SICOP2011,SICOP2012,SICOP2013,SICOP2014,SICOP2015,SICOP2016,SICOP2017,SICOP2018,SICOP2019,SICOP2020,SICOP2021,SICOP2022)
+
+
+# Dado que los nombres son largos, tienen tildes entre otros, los cambiamos manualmente a nombres más cortos y significativos.
+
+
+
+#nombres <- c("Fecha_notificacion","Descripcion","Numero_procedimiento","Institucion","Numero_contrato","Adjudicatario","Cedula_adjudicatario","Moneda","Monto","Modificaciones","Vigencia_contrato","Clasificacion_objeto","Tipo_modalidad","Tipo_Procedimiento","Firma_Contrato","Moneda_monto_estimado","Monto_estimado")
+
+#colnames(SICOP) <- nombres
+ 
+
+
+#SICOP$Fecha_notificacion <- as.POSIXct(SICOP$Fecha_notificacion,format ="%d/%m/%Y")
+
+# Luego de hacer esto para actualizar la base, lo guardamos en formato RDS, un formato que respeta la estructura de las variables y son más eficientes que una base de otro tipo. 
+
+#saveRDS(SICOP,file = "DatosSICOP")
+
+SICOP <-  readRDS("DatosSICOP")
+
+```
+
+
+# Manejo y transformación de Datos
+
+
+```{r}
+
+#Sys.setlocale("LC_TIME", "Spanish")
+
+# Dado que el formato de tipo de cambio es otro que el de SICOP, hacemos el cambio aca para especificar que está españolizado.
+
+# Esto se puede solucionar arreglandolo desde Excel, es más sencillo y se evite problemas de formato.
+
+Tipo_de_Cambio$Fecha <- ymd(Tipo_de_Cambio$Fecha)
+
+
+SICOP$Fecha_notificacion <- ymd(SICOP$Fecha_notificacion)
+
+
+nom <- c("Fecha_notificacion","Compra","Venta")
+
+colnames(Tipo_de_Cambio) <- nom
+
+
+
+#  Filtramos por fecha de interes
+
+
+SICOP2 <- SICOP %>% filter(Fecha_notificacion > "2018-01-01") %>% filter(Fecha_notificacion <"2022-09-01")
+
+# Unimos los datos que tenemos del tipo de cambio 
+
+
+SICOP3  <-  merge(SICOP2, Tipo_de_Cambio, by="Fecha_notificacion")
+
+
+
+```
+
+
+# Analisis Descriptivo de la Base de Datos (EDA)
+
+```{r}
+
+# Primero filtraremos aquellas licitaciones de interes a la empresa con ciertas palabras claves, estas palabras claves se pueden adaptar, entre la recomendación es ser flexible con palabras y no muy ambiguo con ciertas búsquedas.
+
+
+Empresas <-  SICOP3 %>% filter(grepl("software|Software|sofware|Sofware|Outtasking|Windows|Microsoft|microsoft|Microsof|microsof|Oracle|oracle|developer|Developer|Base de datos|Bases de datos|Base Datos|Base datos|BD|SQL|Outsourcing|outsourcing|desarrollador|.net|.netcore|c#|java|react",Descripcion))
+
+
+
+Empresas <- Empresas %>% distinct()
+
+#saveRDS(Empresas,file = "DatosFiltrados")
+
+
+
+```
+
+
+Veamos ahora la cantidad de instituciones y empresas que se les acredito la licitación.
+
+```{r}
+Instituciones <-  Empresas %>%  group_by(Institucion) %>% summarise("Conteo" =n())
+
+Competencia <-  Empresas %>%  group_by(Adjudicatario) %>% summarise("Conteo" = n())
+```
+
+
+
+```{r}
+datatable(Instituciones)
+```
+
+
+
+```{r}
+datatable(Competencia)
+```
+
+
+#  Modelación usando RFM
+
+
+
+
+```{r}
+
+# En esta parte se realiza una limpieza de datos para comenzar a trabajar con esto, es importante definir el tipo de variable.
+
+Empresas$Moneda <-  as.factor(Empresas$Moneda)
+Empresas$Moneda_monto_estimado <-  as.factor(Empresas$Moneda_monto_estimado)
+
+# Dato el formato debemos eliminar los caracteres especiales y dejar el monto en formato númerico.
+
+Empresas$Monto <- as.numeric(gsub(",", ".", Empresas$Monto))
+
+
+# En caso de que una licitación este en dolares, la convertimos a colones, según el tipo de cambio del día que se gano la licitación.
+
+Empresas_2 <- Empresas %>% filter(Moneda == "CRC" | Moneda ==  "USD" ) %>%   mutate("MontoTotal" = ifelse(Moneda == "USD",Monto*Venta,Monto) )
+
+
+# Tomamos unicamente las 3 variables de interes para este estudio, que es la fecha de notificación, el nombre de la institución y el monto final.
+
+
+EmpresasFinal <- Empresas_2[c(1,4,20)]
+
+
+# Código para generar grafico
+
+Empresas_Bar <-  Empresas_2 %>% group_by(Institucion) %>% summarise("Conteo" = n()) 
+
+
+Empresas_Bar <-  Empresas_Bar[order(Empresas_Bar$Conteo,decreasing=TRUE),]
+
+Empresas_Bar <- head(Empresas_Bar,10)
+
+p <-   ggplot(Empresas_Bar, aes(x = Institucion, y = Conteo))+
+    geom_col()+  theme(legend.position = "bottom") + coord_flip()
+q <-  p + aes(stringr::str_wrap(Institucion, 15), Conteo) + xlab("Institución") + ylab("Conteo")
+q 
+```
+
+```{r}
+
+# Codigo para generar gráfico.
+
+Empresas_Bar <-  Empresas_2 %>% group_by(Institucion) %>% summarise("Dinero licitado" = sum(MontoTotal)) 
+
+
+Empresas_Bar <-  Empresas_Bar[order(Empresas_Bar$`Dinero licitado`,decreasing=TRUE),]
+
+Empresas_Bar <- head(Empresas_Bar,10)
+
+p <-   ggplot(Empresas_Bar, aes(x = Institucion, y = `Dinero licitado`))+
+    geom_col()+  theme(legend.position = "bottom") + coord_flip()
+q <-  p + aes(stringr::str_wrap(Institucion, 15), `Dinero licitado`/1000000) + xlab("Institución") + ylab("Dinero Licitado")
+q 
+```
+
+
+```{r}
+
+# En caso de exitir algún NA, los eliminanos y aplicamos el método de rfm, 
+
+EmpresasFinal <- na.omit(EmpresasFinal)
+
+rfm_result <- rfm_table_order(
+                data = EmpresasFinal,
+                customer_id = Institucion,
+                revenue = MontoTotal,
+                order_date = Fecha_notificacion, 
+                analysis_date = as.Date("2022/08/31") 
+                )
+
+## Actualizar fecha de estudio cada vez que se amplia la base de datos.
+```
+
+
+
+
+```{r}
+
+# Esto viene dado por instruciones de uso común del paquete de RFM, para nuestro caso concreto este tipo de segmentación no tiene sentido.
+
+segment_names <- c("Champions", "Loyal Customers", "Potential Loyalist",
+  "New Customers", "Promising", "Need Attention", "About To Sleep",
+  "At Risk", "Can't Lose Them", "Lost")
+
+# We set the upper and lower bounds for recency, frequency, and monetary for the above segments
+recency_lower <- c(4, 2, 3, 4, 3, 2, 2, 1, 1, 1)
+recency_upper <- c(5, 5, 5, 5, 4, 3, 3, 2, 1, 2)
+frequency_lower <- c(4, 3, 1, 1, 1, 2, 1, 2, 4, 1)
+frequency_upper <- c(5, 5, 3, 1, 1, 3, 2, 5, 5, 2)
+monetary_lower <- c(4, 3, 1, 1, 1, 2, 1, 2, 4, 1)
+monetary_upper <- c(5, 5, 3, 1, 1, 3, 2, 5, 5, 2)
+
+# We use the segments and the bounds we previously established to group our users into different segments
+segment <- rfm_segment(rfm_result,
+                       segment_names,
+                       recency_lower,
+                       recency_upper,
+                       frequency_lower, 
+                       frequency_upper, 
+                       monetary_lower,
+                       monetary_upper)
+
+segment %>% 
+  kable() %>% 
+  kable_classic_2()
+```
+
+
+# Uso de Modelos de clusters
+
+
+## PCA  
+
+```{r,echo=FALSE}
+
+# Tomamos de segment que fue la base de datos obtenida de aplicar RFM para comenzar a aplicar los diferentes métodos de clusterización.
+
+
+segment2 <- segment[,c(1,7,8,9)]
+
+
+rownames(segment2) <- segment2$customer_id
+
+# Pasamos a factor cada subgrupo para luego realizar una generación de variabls dummies para utilizar en los métodos.
+
+segment2$recency_score <- as.factor(segment2$recency_score)
+segment2$frequency_score <- as.factor(segment2$frequency_score)
+segment2$monetary_score <- as.factor(segment2$monetary_score)
+
+
+DatosNum <- segment2[,c(2,3,4)]
+
+rownames(DatosNum) <- segment2$customer_id
+
+datosRed <- column_to_rownames(segment2,"customer_id")
+
+# La función dummy.data.frame no esta funcionando con la actualización actual
+#datosRed2 <-   dummy.data.frame(datosRed, sep = ".") 
+
+datosRed2 <- dummy(datosRed)
+
+rownames(datosRed2) <-  segment2$customer_id
+
+
+# en caso de que que algún valor quede como caracter, lo pasamos a númerico.
+
+datosRed2 <- datosRed2 %>% mutate_if(is.character,as.numeric)
+
+
+
+res1<-PCA(datosRed2, scale.unit=TRUE, ncp=5, graph = FALSE)
+
+
+plot(res1,choix="var",habillage=13)
+
+#e_pcabi(res1)
+
+
+# La función e_pcabi del paquete DiscoveR está fallando, revisar si en otra maquina da el mismo problema.
+
+
+
+
+
+```
+
+
+
+
+```{r,echo=FALSE}
+
+#Función para realizar cluster por Kmeans
+
+
+centroide <- function(num.cluster, datos, clusters) {
+  ind <- (clusters == num.cluster)
+  return(colMeans(datos[ind,]))
+}
+
+```
+
+
+```{r,include=FALSE}
+
+#Aplicacion de Kmeans
+
+DatosNum <- scale(datosRed2)
+grupos<-kmeans(DatosNum,centers=4,iter.max=100)  ## iter.max por defecto es 10
+
+```
+
+```{r,echo=FALSE}
+
+#Graficos de Kmeans
+
+datos.escalado <- data.frame(datosRed2, grupos$cluster)
+
+clusplot(datos.escalado, grupos$cluster, color=TRUE, shade=TRUE, 
+    labels=4, lines=0,main = 'Representación de grupos aplicando K-medias')
+
+
+
+```
+
+
+
+
+
+
+#  UMAP  
+
+
+```{r,echo=FALSE}
+
+# La cantidad de vecinos se ajusto automatico, se recomienda los siguientes, pueden observar cual configuración ajusta mejor los grupos.
+
+config <- umap::umap.defaults
+
+#config$n_neighbors  <- 5
+#config$n_neighbors  <- 15
+config$n_neighbors  <- 35
+#config$n_neighbors  <- 50
+#config$n_neighbors  <- 75
+misdatos <- datosRed2
+
+misdatos <- as.data.frame(misdatos)
+
+
+config$n_components <- 2
+umap_df <- umap(misdatos, config)
+
+res_umap <- as.data.frame(umap_df$layout)
+res_umap$group <- datosRed$frequency_score
+
+
+
+```
+
+
+
+```{r,echo=FALSE}
+
+
+# 
+
+p <- res_umap %>% 
+  rownames_to_column("nombres") %>% 
+  group_by(group) %>% 
+  e_charts(x = V1) %>% 
+  e_scatter(V2,symbol_size = 7,bind = nombres) %>%
+  e_tooltip(
+        formatter = htmlwidgets::JS("
+      function(params){
+        return('<strong>' + params.name) 
+                }
+    ")
+  ) %>% 
+   e_datazoom(x_index = c(0, 1))
+p
+```
+
+
+# Proyección Serie de Tiempo 
+
+
+
+
+```{r,echo=FALSE}
+
+#Las siguientes funciones son de utilidad para calculos futuros
+
+RSS <- function(Pred, Real) {
+    return(sum((Real - Pred)^2))
+}
+```
+
+```{r,echo=FALSE}
+MSE <- function(Pred, Real) {
+    N <- length(Real)
+    rss <- sum((Real - Pred)^2)
+    return((1/N) * rss)
+}
+```
+
+```{r,echo=FALSE}
+RMSE <- function(Pred, Real) {
+    N <- length(Real)
+    rss <- sum((Real - Pred)^2)
+    return(sqrt((1/N) * rss))
+}
+```
+
+
+```{r,echo=FALSE}
+RE <- function(Pred, Real) {
+    res <- sum(abs(Real - Pred))/sum(abs(Real))
+    return(res)
+}
+```
+
+```{r,echo=FALSE}
+tabla.errores <- function(predicciones, real, nombres = NULL) {
+    r <- data.frame()
+    for (pred in predicciones) {
+        r <- rbind(r, data.frame(MSE = MSE(pred, real), RMSE = RMSE(pred, real),
+            RE = RE(pred, real), CORR = cor(pred, real)))
+    }
+    row.names(r) <- nombres
+    return(r)
+}
+```
+
+```{r,echo=FALSE}
+grafico.errores <- function(errores) {
+    library(ggplot2)
+    library(reshape)
+
+    centros <- as.data.frame(apply(errores, 2, function(i) scales::rescale(i, to = c(0,
+        100))))
+
+    res <- melt(t(centros), varnames = c("E", "Modelos"))
+    res <- res[order(res$E, decreasing = F), ]
+    res$M <- as.character(res$M)
+    y = c(0, 25, 50, 75, 100)
+
+    ggplot(res, aes(x = E, y = value, group = Modelos, color = Modelos, fill = Modelos)) +
+        geom_polygon(alpha = 0.3, size = 1) + geom_point(size = 3) + theme_minimal() +
+        theme(axis.text.y = element_blank()) + xlab("") + ylab("") + scale_y_continuous(limits = c(-10,
+        100), breaks = y) + annotate("text", x = 0.5, y = y, label = paste0(y, "%"),
+        color = "gray60") + ggproto("CordRadar", CoordPolar, theta = "x", r = "y",
+        start = 0, direction = sign(1))
+}
+```
+
+
+
+
+
+```{r,include=FALSE}
+suavizado <- function(datos, n) {
+    if (n%%2 == 0) {
+        izquierda = rep(NA, (floor(n/2) - 1))
+        derecha = rep(NA, floor(n/2))
+    } else {
+        izquierda = derecha = rep(NA, floor(n/2))
+    }
+
+    datos <- c(izquierda, datos, derecha)
+    return(rollapply(datos, n, mean, na.rm = T))
+}
+```
+
+
+
+
+```{r,include=FALSE}
+calibrar.HW <- function(entrenamiento, prueba, paso = 0.1) {
+    # se calculan todas las combinaciones para los parametros
+    params <- purrr::cross(list(a = seq(0, 1, by = paso), b = seq(0, 1, by = paso),
+        g = seq(0, 1, by = paso)))
+
+    # se calcula un modelos para cada combinacion de parametros
+    hw_secure <- purrr::possibly(stats::HoltWinters, otherwise = NULL)
+    models <- purrr::map(params, ~suppressWarnings(hw_secure(entrenamiento, alpha = ifelse(.$a ==
+        0, F, .$a), beta = ifelse(.$b == 0, F, .$b), gamma = ifelse(.$g == 0, F,
+        .$g))))
+
+    # se realiza la prediccion con cada uno de los modelos
+    predictions <- purrr::map(models, ~{
+        if (is.null(.)) {
+            return(NULL)
+        }
+        forecast(., h = length(prueba))
+    })
+
+    # se calcula el error para cada prediccion
+    error <- purrr::map_dbl(predictions, ~{
+        if (is.null(.)) {
+            return(Inf)
+        }
+        sum((as.numeric(prueba) - as.numeric(.$mean))^2)
+    })
+
+    # se retorna el modelo con el menor error
+    best_model <- models[[which.min(error)]]
+    p <- params[[which.min(error)]]
+    best_model$call <- call("HoltWinters", x = quote(datos), alpha = ifelse(p$a ==
+        0, F, p$a), beta = ifelse(p$b == 0, F, p$b), gamma = ifelse(p$g == 0, F,
+        p$g))
+    return(best_model)
+}
+```
+
+
+
+```{r,include=FALSE}
+calibrar.arima <- function(entrenamiento = NULL, prueba = NULL, periodo = NA_integer_,
+    p = 0:4, d = 0:1, q = 0:1, P = 0:4, D = 0:1, Q = 0:1) {
+    # se calculan todas las combinaciones para los parametros
+    params <- purrr::cross(list(a = p, b = d, c = q, d = P, e = D, f = Q))
+
+    # se calcula un modelos para cada combinacion de parametros
+    arima_secure <- purrr::possibly(stats::arima, otherwise = NULL)
+    models <- purrr::map(params, ~suppressWarnings(arima_secure(entrenamiento, order = c(.$a,
+        .$b, .$c), seasonal = list(order = c(.$d, .$e, .$f), period = periodo))))
+
+    # se realiza la prediccion con cada uno de los modelos
+    predictions <- purrr::map(models, ~{
+        if (is.null(.)) {
+            return(NULL)
+        }
+        forecast(., h = length(prueba))
+    })
+
+    # se calcula el error para cada prediccion
+    error <- purrr::map_dbl(predictions, ~{
+        if (is.null(.)) {
+            return(Inf)
+        }
+        sum((as.numeric(prueba) - as.numeric(.$mean))^2)
+    })
+
+    # se retorna el modelo con el menor error
+    best_model <- models[[which.min(error)]]
+    r <- params[[which.min(error)]]
+    best_model$call <- call("arima", x = quote(datos), order = as.numeric(c(r$a,
+        r$b, r$c)), seasonal = list(order = as.numeric(c(r$d, r$e, r$f)), period = periodo))
+    return(best_model)
+}
+```
+
+
+
+```{r}
+
+# Pasamos los datos a un agrupamiento mensual y contamos cuantas hay mensualmente.
+
+datos2 <- Empresas_2 %>% group_by(Date=floor_date(Fecha_notificacion, "month")) %>% 
+  summarise(Conteo = n())
+```
+
+```{r}
+
+# Creamos la serie de tiempo.
+
+serie <- ts(datos2$Conteo, start = c(2018,1), freq = 12)
+```
+
+
+```{r}
+
+# Revisamos el comportamiento de la base de datos.
+
+autoplot(stl(serie, s.window = "periodic"))
+```
+
+```{r}
+
+# Separamos en una base prueba y otra de testeo
+
+serie.train <- head(serie,50)
+serie.test <- tail(serie, 6)
+```
+
+```{r}
+res <- spec.pgram(serie.train, log = "no", plot = F)
+pos <- order(res$spec, res$freq, decreasing = TRUE)  # Ordenamos de mayor a menor.
+mejores3 <- pos[pos != 1][1:3]  # Ignoramos la posición 1 y tomamos las 3 primeras posiciones.
+frecuencias <- res$freq[mejores3]  # Obtenemos la frecuencia de las 3 primeras posiciones.
+periodos <- (12)/frecuencias  # Obtenemos los 3 periodos más importantes
+periodos
+```
+
+Vemos como mejor periodo se ajusta a los 6 dias, vamos a tomar el periodo de 6 dias, esto solamente por facilidad de interpretación.
+
+
+#  ARIMA
+
+```{r}
+auto.arima(serie.train)
+```
+
+Los resultados del auto arima arroja lo siguiente: 
+
+
+
+```{r,echo=FALSE}
+modelo.arima <- arima(serie.train, order = c(0, 1, 1), seasonal = list(order = c(0,
+    0, 0), period = 6))
+pred.arima <- predict(modelo.arima, n.ahead = 6)
+```
+
+Ahora aplicamos una calibración a fuerza computacional para encontrar un mejor modelo ARIMA, este nos arroja el siguiente resultado
+
+```{r}
+
+# Esta funcio aprovecha el poder computacional para buscar los mejores parametros. Esto puede tardar segun el equipo y la cantidad de información que se desea procesar.
+
+#calibrar.arima(serie.train, serie.test, periodo = 6)
+
+#Call:
+#arima(x = datos, order = c(3, 1, 0), seasonal = list(order = c(3, 0, 0), period = 6))
+
+#Coefficients:
+#          ar1      ar2      ar3     sar1    sar2    sar3
+#      -0.5756  -0.4255  -0.3288  -0.3113  0.3766  0.1943
+#s.e.   0.1612   0.1585   0.1496   0.1663  0.2046  0.2034
+
+#sigma^2 estimated as 2753:  log likelihood = -265.42,  aic = 544.84
+
+## Corrida 2 
+
+
+```
+
+
+```{r,echo=FALSE}
+modelo.arima.calibrado <- arima(x = serie.train, order = c(3, 1, 0), seasonal = list(order = c(3, 0, 0), period = 6))
+pred.arima.calibrado <- predict(modelo.arima.calibrado, n.ahead = 6)
+```
+
+
+# Holt-Winters 
+
+Al igual que con ARIMA, aplicamos el método brindado por R, pero también aplicamos fuerza computacional y así encontrar el mejor modelo Holt-Winters.
+
+```{r,echo=FALSE}
+modelo.HW <- HoltWinters(serie.train)
+pred.HW <- predict(modelo.HW, n.ahead = 6)
+```
+
+
+```{r,echo=FALSE}
+# Esto aprovecha el poder computacional para buscar los mejores parametros.
+
+
+calibrar.HW(serie.train,serie.test)
+```
+
+```{r,echo=FALSE}
+modelo.HW.calibrado <- HoltWinters(x = serie.train, alpha = 0.5, beta = 0.9 , gamma = 0.1 )
+pred.HW.calibrado <- predict(modelo.HW.calibrado, n.ahead = 6)
+```
+
+# Redes Neuronales  
+
+
+Aqui aplicamos el paquete brindado por R de forecast, que usa la función Nnetar, adicionalmente indicamos 5 nodos. Esto último se puede modificar, pero luego de probar varios nodos, encontramos 5 como el más óptimo.
+
+```{r}
+modelo.redes <- nnetar(serie.train, size = 5)
+pred.redes <- predict(modelo.redes, h = 6, PI = T)
+```
+
+# Tabla y gráfico de errores 
+
+Ahora hagamos una comparación con todos los métodos utilizados, recordemos que buscamos reducir el MSE, tener la correlación más cercana a 1 y el error relativo más bajo.
+
+```{r,include=FALSE}
+errores <- tabla.errores(predicciones = list(pred.arima$pred, pred.arima.calibrado$pred,
+    pred.HW, pred.HW.calibrado, pred.redes$mean), real = serie.test)
+
+row.names(errores) <- c("AUTO.ARIMA", "ARIMA FUERZA BRUTA", "HOLT-WINTERS", "HW FUERZA BRUTA",
+    "REDES")
+```
+
+```{r,echo=FALSE}
+errores
+grafico.errores(errores)
+
+
+```
+
+
+No cabe duda que el modelo encontrado a fuerza computacional por ARIMA es el que mejores resultados arroja.
+
+
+# Gráfico de predicción  
+
+```{r,echo=FALSE}
+res <- ts.union(serie.train,serie.test, pred.arima$pred, pred.arima.calibrado$pred,
+    pred.HW, pred.HW.calibrado, pred.redes$mean)
+res <- data.frame(res)
+res$d <- datos2$Date
+res |> e_charts(x = d) |> e_datazoom() |> e_tooltip(trigger = 'axis') |>
+  e_line(serie = serie.train, name = 'Entrenamiento') |>
+  e_line(serie = serie.test, name = 'Prueba') |>
+  e_line(serie = pred.arima.pred, name = 'Arima') |>
+  e_line(serie = pred.arima.calibrado.pred, name = 'Arima Calibrado') |>
+  e_line(serie = pred.HW, name = 'HW') |>
+  e_line(serie = pred.HW.calibrado, name = 'HW calibrado') |>
+  e_line(serie = pred.redes.mean, name = 'Redes N')
+```
+
+
+
+
+ Predicción de los siguientes 6 meses del comportamiento de los datos
+
+```{r}
+modelo.arima.calibrado <- arima(x = serie, order = c(3, 1, 0), seasonal = list(order = c(3, 0, 0), period = 6))
+pred.arima.calibrado <- predict(modelo.arima.calibrado, n.ahead = 12)
+
+
+
+
+fechas <-  seq(as.Date("2018-01-01"), as.Date("2023-08-01"), by="months")
+
+serion <- serie
+
+res <- ts.union(serion, pred.arima.calibrado$pred)
+res <- data.frame(res)
+res$d <- fechas
+q <-  res |> e_charts(x = d) |> e_datazoom() |> e_tooltip(trigger = 'axis') |>
+  e_line(serie = serion, name = 'Serie') |>
+  e_line(serie = pred.arima.calibrado.pred, name = 'Predicción')
+q
+```
+
+
+
+
+
+

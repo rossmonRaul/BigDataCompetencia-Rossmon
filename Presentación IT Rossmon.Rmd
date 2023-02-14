@@ -1,0 +1,775 @@
+---
+title: "Presentacion IT Rossmon"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(flexdashboard)
+library(lubridate)
+library(tidyverse)
+library(plotly)
+library(kableExtra)
+library(readxl)
+library(ggplot2)
+library(DT)
+library(lifecontingencies)
+library(gganimate)
+library(gifski)
+library(xtable)
+library(traineR)
+library(caret)
+library(lattice)
+library(dummies)
+library(corrplot)
+library(glmnet)
+library(rpart)
+library(rpart.plot)
+library(xgboost)
+library (randomForest)
+library(discoveR)
+library(rattle)
+library(gbm)
+library(e1071)
+library(neuralnet)
+library(magrittr)
+library(dygraphs)
+library("FactoMineR") 
+library("factoextra")
+library(pls)
+library("corrplot")
+library(janitor)
+library(gdata)
+library(cluster)
+library(fmsb)
+library(umap)
+library(Rtsne)
+library(echarts4r)
+library(zoo)
+library(rfm)
+library(forecast)
+library(forecasteR)
+library(xts)
+options(kableExtra.html.bsTable = TRUE)
+options(scipen = 999)
+```
+
+
+Presentación
+========================================================
+
+
+<image src="C:/Users/Cesar/Desktop/IT Rossmon/Rossmon.png" alt="">
+
+
+```{r,echo=F}
+
+```
+
+
+
+Base de datos
+========================================================
+
+
+```{r,echo=F}
+Empresas <- readRDS("DatosFiltrados")
+
+datatable(Empresas)
+```
+
+
+Analisis Exploratorio
+========================================================
+
+Column {.tabset data-width=1000}
+-----------------------------------------------------------------------
+
+
+```{r,echo=FALSE}
+
+Empresas$Moneda <-  as.factor(Empresas$Moneda)
+Empresas$Moneda_monto_estimado <-  as.factor(Empresas$Moneda_monto_estimado)
+
+Empresas$Monto <- as.numeric(gsub(",", ".", Empresas$Monto))
+
+
+
+Empresas_2 <- Empresas %>% filter(Moneda == "CRC" | Moneda ==  "USD" ) %>%   mutate("MontoTotal" = ifelse(Moneda == "USD",Monto*Venta,Monto) )
+
+
+EmpresasFinal <- Empresas_2[c(1,4,20)]
+
+Empresas_Bar <-  Empresas_2 %>% group_by(Institucion) %>% summarise("Conteo" = n()) 
+
+
+
+```
+
+
+
+### Grafico 1
+
+Conteo de licitaciones en las 12 mayores empresas
+```{r,echo=FALSE}
+Empresas_Bar <-  Empresas_Bar[order(Empresas_Bar$Conteo,decreasing=TRUE),]
+
+Empresas_Bar <- head(Empresas_Bar,12)
+p <-   ggplot(Empresas_Bar, aes(x = Institucion, y = Conteo))+
+    geom_col()+  theme(legend.position = "bottom") + coord_flip()
+q <-  p + aes(stringr::str_wrap(Institucion, 25), Conteo) + xlab("Institución") + ylab("Conteo")
+
+ggplotly(q)
+```
+
+
+### Grafico 2
+
+Cantidad de dinero invertido en las 12 mayores empresas
+
+```{r,echo=FALSE}
+
+Empresas_Bar <-  Empresas_2 %>% group_by(Institucion) %>% summarise("Dinero licitado" = sum(MontoTotal)) 
+
+
+Empresas_Bar <-  Empresas_Bar[order(Empresas_Bar$`Dinero licitado`,decreasing=TRUE),]
+
+Empresas_Bar <- head(Empresas_Bar,12)
+
+p <-   ggplot(Empresas_Bar, aes(x = Institucion, y = `Dinero licitado`))+
+    geom_col()+  theme(legend.position = "bottom") + coord_flip()
+q <-  p + aes(x =stringr::str_wrap(Institucion, 25), y = `Dinero licitado`/1000000) + xlab("Institución") + ylab("Dinero Licitado")
+ggplotly(q) 
+
+```
+
+
+
+
+```{r,echo=FALSE}
+rfm_result <- rfm_table_order(
+                data = EmpresasFinal,
+                customer_id = Institucion,
+                revenue = MontoTotal,
+                order_date = Fecha_notificacion, 
+                analysis_date = as.Date("2022/08/31") 
+                )
+```
+
+
+
+
+
+### Tabla RFM
+
+Tabla encontrada aplicando RFM a los datos
+```{r,echo=FALSE}
+segment_names <- c("Champions", "Loyal Customers", "Potential Loyalist",
+  "New Customers", "Promising", "Need Attention", "About To Sleep",
+  "At Risk", "Can't Lose Them", "Lost")
+
+# We set the upper and lower bounds for recency, frequency, and monetary for the above segments
+recency_lower <- c(4, 2, 3, 4, 3, 2, 2, 1, 1, 1)
+recency_upper <- c(5, 5, 5, 5, 4, 3, 3, 2, 1, 2)
+frequency_lower <- c(4, 3, 1, 1, 1, 2, 1, 2, 4, 1)
+frequency_upper <- c(5, 5, 3, 1, 1, 3, 2, 5, 5, 2)
+monetary_lower <- c(4, 3, 1, 1, 1, 2, 1, 2, 4, 1)
+monetary_upper <- c(5, 5, 3, 1, 1, 3, 2, 5, 5, 2)
+
+# We use the segments and the bounds we previously established to group our users into different segments
+segment <- rfm_segment(rfm_result,
+                       segment_names,
+                       recency_lower,
+                       recency_upper,
+                       frequency_lower, 
+                       frequency_upper, 
+                       monetary_lower,
+                       monetary_upper)
+
+segment2 <- segment[,-2]
+
+datatable(segment2)
+```
+
+
+Modelación de Clusters
+========================================================
+
+Column {.tabset data-width=1000}
+-----------------------------------------------------------------------
+
+
+### Clusters  PCA
+
+
+```{r,echo=FALSE}
+
+segment2 <- segment[,c(1,7,8,9)]
+
+
+rownames(segment2) <- segment2$customer_id
+
+
+segment2$recency_score <- as.factor(segment2$recency_score)
+segment2$frequency_score <- as.factor(segment2$frequency_score)
+segment2$monetary_score <- as.factor(segment2$monetary_score)
+
+
+DatosNum <- segment2[,c(2,3,4)]
+
+rownames(DatosNum) <- segment2$customer_id
+
+datosRed <- column_to_rownames(segment2,"customer_id")
+datosRed2 <-  dummy.data.frame(datosRed, sep = ".")
+
+
+res1<-PCA(datosRed2, scale.unit=TRUE, ncp=5, graph = FALSE)
+
+
+e_pcabi(res1)
+
+
+
+
+```
+
+
+
+
+### Clusters UMAP frequency
+
+
+
+```{r,echo=FALSE}
+set.seed(77)
+config <- umap::umap.defaults
+
+#config$n_neighbors  <- 5
+#config$n_neighbors  <- 15
+config$n_neighbors  <- 35
+#config$n_neighbors  <- 50
+#config$n_neighbors  <- 75
+misdatos <- datosRed2
+
+misdatos <- as.data.frame(misdatos)
+
+
+config$n_components <- 2
+umap_df <- umap(misdatos, config)
+
+res_umap <- as.data.frame(umap_df$layout)
+res_umap$group <- datosRed$frequency_score
+
+
+
+#res_umap$nombres <-  datos2$X_Player
+
+#res_umap <- column_to_rownames(res_umap,"nombres")
+
+
+p <- res_umap %>% 
+  rownames_to_column("nombres") %>% 
+  group_by(group) %>% 
+  e_charts(x = V1) %>% 
+  e_scatter(V2,symbol_size = 7,bind = nombres) %>%
+  e_tooltip(
+        formatter = htmlwidgets::JS("
+      function(params){
+        return('<strong>' + params.name) 
+                }
+    ")
+  ) %>% 
+   e_datazoom(x_index = c(0, 1))
+p
+```
+
+
+### UMAP Recency
+
+```{r,echo=FALSE}
+res_umap <- as.data.frame(umap_df$layout)
+res_umap$group <- datosRed$recency_score
+
+
+
+#res_umap$nombres <-  datos2$X_Player
+
+#res_umap <- column_to_rownames(res_umap,"nombres")
+
+
+p <- res_umap %>% 
+  rownames_to_column("nombres") %>% 
+  group_by(group) %>% 
+  e_charts(x = V1) %>% 
+  e_scatter(V2,symbol_size = 7,bind = nombres) %>%
+  e_tooltip(
+        formatter = htmlwidgets::JS("
+      function(params){
+        return('<strong>' + params.name) 
+                }
+    ")
+  ) %>% 
+   e_datazoom(x_index = c(0, 1))
+p
+```
+
+### UMAP Monen
+
+```{r,echo=FALSE}
+res_umap <- as.data.frame(umap_df$layout)
+res_umap$group <- datosRed$monetary_score
+
+
+
+#res_umap$nombres <-  datos2$X_Player
+
+#res_umap <- column_to_rownames(res_umap,"nombres")
+
+
+p <- res_umap %>% 
+  rownames_to_column("nombres") %>% 
+  group_by(group) %>% 
+  e_charts(x = V1) %>% 
+  e_scatter(V2,symbol_size = 7,bind = nombres) %>%
+  e_tooltip(
+        formatter = htmlwidgets::JS("
+      function(params){
+        return('<strong>' + params.name) 
+                }
+    ")
+  ) %>% 
+   e_datazoom(x_index = c(0, 1))
+p
+```
+
+
+### Empresas de Interes
+
+```{r,echo=FALSE}
+EmpresasFiltradas <-  res_umap %>% filter(V1 < -2)
+
+
+Empresitas <-  segment2 %>% remove_rownames %>% column_to_rownames(var="customer_id")
+
+EmpresasFinales <- merge(EmpresasFiltradas,Empresitas,by= "row.names")
+
+EmpresasMostrar <-  EmpresasFinales %>% remove_rownames %>% column_to_rownames(var="Row.names")
+
+
+datatable(EmpresasMostrar)
+
+```
+
+
+
+Proyecciones   
+========================================================
+
+Column {.tabset data-width=1000}
+-----------------------------------------------------------------------
+
+
+
+```{r,echo=FALSE}
+RSS <- function(Pred, Real) {
+    return(sum((Real - Pred)^2))
+}
+```
+
+```{r,echo=FALSE}
+MSE <- function(Pred, Real) {
+    N <- length(Real)
+    rss <- sum((Real - Pred)^2)
+    return((1/N) * rss)
+}
+```
+
+```{r,echo=FALSE}
+RMSE <- function(Pred, Real) {
+    N <- length(Real)
+    rss <- sum((Real - Pred)^2)
+    return(sqrt((1/N) * rss))
+}
+```
+
+
+```{r,echo=FALSE}
+RE <- function(Pred, Real) {
+    res <- sum(abs(Real - Pred))/sum(abs(Real))
+    return(res)
+}
+```
+
+```{r,echo=FALSE}
+tabla.errores <- function(predicciones, real, nombres = NULL) {
+    r <- data.frame()
+    for (pred in predicciones) {
+        r <- rbind(r, data.frame(MSE = MSE(pred, real), RMSE = RMSE(pred, real),
+            RE = RE(pred, real), CORR = cor(pred, real)))
+    }
+    row.names(r) <- nombres
+    return(r)
+}
+```
+
+```{r,echo=FALSE}
+grafico.errores <- function(errores) {
+    library(ggplot2)
+    library(reshape)
+
+    centros <- as.data.frame(apply(errores, 2, function(i) scales::rescale(i, to = c(0,
+        100))))
+
+    res <- melt(t(centros), varnames = c("E", "Modelos"))
+    res <- res[order(res$E, decreasing = F), ]
+    res$M <- as.character(res$M)
+    y = c(0, 25, 50, 75, 100)
+
+    ggplot(res, aes(x = E, y = value, group = Modelos, color = Modelos, fill = Modelos)) +
+        geom_polygon(alpha = 0.3, size = 1) + geom_point(size = 3) + theme_minimal() +
+        theme(axis.text.y = element_blank()) + xlab("") + ylab("") + scale_y_continuous(limits = c(-10,
+        100), breaks = y) + annotate("text", x = 0.5, y = y, label = paste0(y, "%"),
+        color = "gray60") + ggproto("CordRadar", CoordPolar, theta = "x", r = "y",
+        start = 0, direction = sign(1))
+}
+```
+
+
+
+
+
+```{r,echo=FALSE}
+suavizado <- function(datos, n) {
+    if (n%%2 == 0) {
+        izquierda = rep(NA, (floor(n/2) - 1))
+        derecha = rep(NA, floor(n/2))
+    } else {
+        izquierda = derecha = rep(NA, floor(n/2))
+    }
+
+    datos <- c(izquierda, datos, derecha)
+    return(rollapply(datos, n, mean, na.rm = T))
+}
+```
+
+
+
+
+```{r,echo=FALSE}
+calibrar.HW <- function(entrenamiento, prueba, paso = 0.1) {
+    # se calculan todas las combinaciones para los parametros
+    params <- purrr::cross(list(a = seq(0, 1, by = paso), b = seq(0, 1, by = paso),
+        g = seq(0, 1, by = paso)))
+
+    # se calcula un modelos para cada combinacion de parametros
+    hw_secure <- purrr::possibly(stats::HoltWinters, otherwise = NULL)
+    models <- purrr::map(params, ~suppressWarnings(hw_secure(entrenamiento, alpha = ifelse(.$a ==
+        0, F, .$a), beta = ifelse(.$b == 0, F, .$b), gamma = ifelse(.$g == 0, F,
+        .$g))))
+
+    # se realiza la prediccion con cada uno de los modelos
+    predictions <- purrr::map(models, ~{
+        if (is.null(.)) {
+            return(NULL)
+        }
+        forecast(., h = length(prueba))
+    })
+
+    # se calcula el error para cada prediccion
+    error <- purrr::map_dbl(predictions, ~{
+        if (is.null(.)) {
+            return(Inf)
+        }
+        sum((as.numeric(prueba) - as.numeric(.$mean))^2)
+    })
+
+    # se retorna el modelo con el menor error
+    best_model <- models[[which.min(error)]]
+    p <- params[[which.min(error)]]
+    best_model$call <- call("HoltWinters", x = quote(datos), alpha = ifelse(p$a ==
+        0, F, p$a), beta = ifelse(p$b == 0, F, p$b), gamma = ifelse(p$g == 0, F,
+        p$g))
+    return(best_model)
+}
+```
+
+
+
+```{r,echo=FALSE}
+calibrar.arima <- function(entrenamiento = NULL, prueba = NULL, periodo = NA_integer_,
+    p = 0:4, d = 0:1, q = 0:1, P = 0:4, D = 0:1, Q = 0:1) {
+    # se calculan todas las combinaciones para los parametros
+    params <- purrr::cross(list(a = p, b = d, c = q, d = P, e = D, f = Q))
+
+    # se calcula un modelos para cada combinacion de parametros
+    arima_secure <- purrr::possibly(stats::arima, otherwise = NULL)
+    models <- purrr::map(params, ~suppressWarnings(arima_secure(entrenamiento, order = c(.$a,
+        .$b, .$c), seasonal = list(order = c(.$d, .$e, .$f), period = periodo))))
+
+    # se realiza la prediccion con cada uno de los modelos
+    predictions <- purrr::map(models, ~{
+        if (is.null(.)) {
+            return(NULL)
+        }
+        forecast(., h = length(prueba))
+    })
+
+    # se calcula el error para cada prediccion
+    error <- purrr::map_dbl(predictions, ~{
+        if (is.null(.)) {
+            return(Inf)
+        }
+        sum((as.numeric(prueba) - as.numeric(.$mean))^2)
+    })
+
+    # se retorna el modelo con el menor error
+    best_model <- models[[which.min(error)]]
+    r <- params[[which.min(error)]]
+    best_model$call <- call("arima", x = quote(datos), order = as.numeric(c(r$a,
+        r$b, r$c)), seasonal = list(order = as.numeric(c(r$d, r$e, r$f)), period = periodo))
+    return(best_model)
+}
+```
+
+
+```{r,echo=FALSE}
+datos2 <- Empresas_2 %>% group_by(Date=floor_date(Fecha_notificacion, "month")) %>% 
+  summarise(Conteo = n())
+```
+
+
+```{r,echo=FALSE}
+serie <- ts(datos2$Conteo, start = c(2018,1), freq = 12)
+```
+
+
+
+```{r,echo=FALSE}
+serie.train <- head(serie,50)
+serie.test <- tail(serie, 6)
+```
+
+
+```{r,echo=FALSE}
+res <- spec.pgram(serie.train, log = "no", plot = F)
+pos <- order(res$spec, res$freq, decreasing = TRUE)  # Ordenamos de mayor a menor.
+mejores3 <- pos[pos != 1][1:3]  # Ignoramos la posición 1 y tomamos las 3 primeras posiciones.
+frecuencias <- res$freq[mejores3]  # Obtenemos la frecuencia de las 3 primeras posiciones.
+periodos <- (12)/frecuencias  # Obtenemos los 3 periodos más importantes
+#periodos
+```
+
+```{r,echo=FALSE}
+#auto.arima(serie.train)
+
+#Series: serie.train 
+#ARIMA(0,1,1)(1,0,0)[12] 
+```
+
+
+```{r,echo=FALSE}
+modelo.arima <- arima(serie.train, order = c(0, 1, 1), seasonal = list(order = c(1,
+    0, 0), period = 12))
+pred.arima <- predict(modelo.arima, n.ahead = 6)
+```
+
+```{r,echo=FALSE}
+#calibrar.arima(serie.train, serie.test, periodo = 12)
+
+#Call:
+#arima(x = datos, order = c(0, 0, 0), seasonal = list(order = c(0, 0, 1), period = 12))
+
+#Coefficients:
+#        sma1  intercept
+#      0.4026    97.6700
+#s.e.  0.1713    10.1542
+
+#sigma^2 estimated as 2967:  log likelihood = -271.89,  aic = 549.78
+
+```
+
+
+```{r,echo=FALSE}
+modelo.arima.calibrado <- arima(x = serie.train, order = c(0, 0, 0), seasonal = list(order = c(0, 0, 1), period = 12))
+pred.arima.calibrado <- predict(modelo.arima.calibrado, n.ahead = 6)
+```
+
+
+```{r,echo=FALSE}
+modelo.HW <- HoltWinters(serie.train)
+pred.HW <- predict(modelo.HW, n.ahead = 6)
+```
+
+
+```{r,echo=FALSE}
+#calibrar.HW(serie.train,serie.test)
+```
+
+```{r,echo=FALSE}
+modelo.HW.calibrado <- HoltWinters(x = serie.train, alpha = 0.5, beta = 0.9, gamma = 0.1)
+pred.HW.calibrado <- predict(modelo.HW.calibrado, n.ahead = 6)
+```
+
+
+```{r,echo=FALSE}
+modelo.redes <- nnetar(serie.train, size = 5)
+pred.redes <- predict(modelo.redes, h = 6, PI = T)
+```
+
+
+
+```{r,echo=FALSE}
+errores <- tabla.errores(predicciones = list(pred.arima$pred, pred.arima.calibrado$pred,
+    pred.HW, pred.HW.calibrado, pred.redes$mean), real = serie.test)
+
+row.names(errores) <- c("AUTO.ARIMA", "ARIMA FUERZA BRUTA", "HOLT-WINTERS", "HW FUERZA BRUTA",
+    "REDES")
+
+```
+
+```{r,echo=FALSE}
+#errores
+#grafico.errores(errores)
+
+
+```
+
+
+
+
+### Grafico 1
+```{r,echo=FALSE}
+res <- ts.union(serie.train,serie.test, pred.arima$pred, pred.arima.calibrado$pred,
+    pred.HW, pred.HW.calibrado, pred.redes$mean)
+res <- data.frame(res)
+res$d <- datos2$Date
+res |> e_charts(x = d) |> e_datazoom() |> e_tooltip(trigger = 'axis') |>
+  e_line(serie = serie.train, name = 'Entrenamiento') |>
+  e_line(serie = serie.test, name = 'Prueba') |>
+  e_line(serie = pred.arima.pred, name = 'Arima') |>
+  e_line(serie = pred.arima.calibrado.pred, name = 'Arima Calibrado') |>
+  e_line(serie = pred.HW, name = 'HW') |>
+  e_line(serie = pred.HW.calibrado, name = 'HW calibrado') |>
+  e_line(serie = pred.redes.mean, name = 'Redes N')
+```
+
+
+### Gráfico 2
+
+```{r,echo=FALSE}
+modelo.HW <- HoltWinters(x = serie, alpha = 0.5, beta = 0.9, gamma = 0.1)
+
+pred <- forecast(modelo.HW, h = 12, level = c(90))
+
+p <- ts.union(prediccion = pred$mean, LimInf = pred$lower, LimSup = pred$upper)
+
+predicciones <- ts.union(serie, p)
+
+
+fecha.fin <- datos2$Date[nrow(datos2)]
+
+# Generamos las fechas de la predicción.  Generamos más de lo necesario ya que
+# hay que eiliminar fines de semana.
+fechas <- fecha.fin + months(1:12)
+
+
+
+# Unimos con las fechas de la serie original
+total.fechas <- c(datos2$Date, fechas)
+
+predicciones <- xts(xts(predicciones, order.by = total.fechas))
+
+dygraph(predicciones, width = "100%") %>%
+    dySeries(c("p.LimInf", "p.prediccion", "p.LimSup"), label = "Predicción") %>%
+    dyRangeSelector()
+
+
+#fechas <-  seq(as.Date("2018-01-01"), as.Date("2023-08-01"), by="months")
+
+#serion <- serie
+
+#res <- ts.union(serion, pred.arima.calibrado$pred)
+#res <- data.frame(res)
+#res$d <- fechas
+#q <-  res |> e_charts(x = d) |> e_datazoom() |> e_tooltip(trigger = 'axis') |>
+#  e_line(serie = serion, name = 'Serie') |>
+#  e_line(serie = pred.arima.calibrado.pred, name = 'Predicción')
+#q
+```
+
+
+### Modelos utilizados
+```{r,echo=FALSE}
+datatable(errores)
+```
+
+
+
+
+Clientes Individualizados 
+========================================================
+
+Column {.tabset data-width=1000}
+-----------------------------------------------------------------------
+
+
+### BCR
+```{r,echo=FALSE}
+
+BCR <- Empresas %>% filter(Institucion == "BANCO DE COSTA RICA")
+
+BCRorder <-  BCR[order(BCR$Fecha_notificacion,decreasing=TRUE),]
+
+BCRTop <- head(BCRorder,20)
+
+datatable(BCRTop)
+
+```
+
+
+### BCR conteo 
+
+
+```{r,echo=FALSE}
+BCRserie <- BCR %>% group_by(Date=floor_date(Fecha_notificacion, "month")) %>% 
+  summarise(Conteo = n())   
+```
+
+```{r,echo=FALSE}
+res <- data.frame(BCRserie)
+res |> e_charts(x = Date) |> e_datazoom() |> e_tooltip(trigger = 'axis') |>
+  e_line(serie = Conteo, name = 'Conteo')
+```
+
+
+
+### UCR
+```{r,echo=FALSE}
+
+UCR <- Empresas %>% filter(Institucion == "Universidad de Costa Rica")
+
+UCRorder <-  UCR[order(UCR$Fecha_notificacion,decreasing=TRUE),]
+
+UCRTop <- head(UCRorder,20)
+
+datatable(UCRTop)
+
+```
+
+
+### UCR conteo 
+
+
+```{r,echo=FALSE}
+UCRserie <- UCR %>% group_by(Date=floor_date(Fecha_notificacion, "month")) %>% 
+  summarise(Conteo = n())   
+```
+
+```{r,echo=FALSE}
+res <- data.frame(UCRserie)
+res |> e_charts(x = Date) |> e_datazoom() |> e_tooltip(trigger = 'axis') |>
+  e_line(serie = Conteo, name = 'Conteo')
+```
